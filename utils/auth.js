@@ -8,12 +8,10 @@ require('dotenv/config');
  * @param {Object} options Secret token and jwt option, Secret token Cannot Be Defautt
  * 
  */
-function createToken(dataUser, token, option = { expiresIn: 4 * 60 }) {
+function createToken(dataUser, token, option = { expiresIn: 10 * 60 }) {
     if (!(typeof dataUser === 'object' && typeof dataUser !== 'function')) {
         throw new Error("Data User is Not An Object")
     }
-    // const { token, optionsJWT } = options;
-
     if (token == null) {
         throw new Error('Token Secret Cannot Be Null');
     }
@@ -34,7 +32,7 @@ function checkToken(token, secretKey) {
         const decoded = jwt.verify(token, secretKey);
         return decoded;
     } catch (err) {
-        return err;
+        throw err.name;
     }
 }
 
@@ -50,7 +48,7 @@ function checkUsername(user) {
 /**
  * 
  * @param {Request Client} req 
- * @param {Request Client} res 
+ * @param {Respond Client} res 
  * @param {Callback} next 
  */
 function registerProcedur(req, res, next) {
@@ -102,10 +100,10 @@ function emailFormat(email) {
  * @returns 
  */
 function passwordFormat(password) {
+    password = password.toString();
     if (password.length < 8) {
         throw new Error('Password Length Min 8')
     }
-    password = password.toString();
     if (!(/(?=[A-Z])/g.test(password))) {
         throw new Error('At Least One Upper Case');
     }
@@ -144,10 +142,21 @@ function hash(password) {
 
 }
 
+function checkPassword(password, passwordHash) {
+    try {
+        if (passwordHash == null && password == null) throw new Error("Password Is Empty")
+        const verify = bcrypt.compareSync(password, passwordHash);
+        return verify;
+    } catch (error) {
+        return error;
+    }
+}
+
 module.exports = {
     registerProcedur,
     createToken,
     checkToken,
     emailFormat,
-    passwordFormat
+    passwordFormat,
+    checkPassword
 }
