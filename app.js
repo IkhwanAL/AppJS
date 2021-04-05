@@ -1,14 +1,36 @@
 const express = require('express');
+const NodeMail = require('nodemailer');
+
 const User = require('./mongodb/schema/user.schema');
-const { registerProcedur, createToken, checkPassword } = require('./utils/auth');
+const Token = require('./mongodb/schema/token.schema');
+const {
+    registerProcedur,
+    createToken,
+    checkPassword,
+    checkToken,
+    generateTokenConfirmation
+} = require('./utils/auth');
 const Con = require('./connection');
-const { create } = require('./mongodb/schema/user.schema');
 const app = express();
 require('dotenv/config');
 const api_url = '/api/v1';
 
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
+
+app.post('/asd', (req, res) => {
+
+    // let user = bcrypt.hashSync(req.body.username, 1)
+    // let email = bcrypt.hashSync(req.body.email, 1)
+    // let role = bcrypt.hashSync('basic', 1)
+
+    let user = new Buffer.from(req.body.username).toString('base64');
+    let email = new Buffer.from(req.body.email).toString('base64');
+    let role = new Buffer.from('basic').toString('base64');
+    let link = [user, email, role].join(':');
+    // let data = link.split(":");
+    res.end(`${link}`);
+})
 
 app.post(`${api_url}/login`, async (req, res) => {
     await Con.getConnection();
@@ -40,7 +62,7 @@ app.post(`${api_url}/login`, async (req, res) => {
     }
 
     const accessToken = createToken(UserData, process.env.ACC_TOKEN);
-    const refreshToken = createToken(UserData, process.env.REF_TOKEN, { expiresIn: 4 * 3600 });
+    const refreshToken = createToken(UserData, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
 
     res.status(200).json({
         message: 'Login Success',
@@ -51,25 +73,18 @@ app.post(`${api_url}/login`, async (req, res) => {
     return res.end();
 })
 
-// function()
+app.post(`${api_url}/confirmation/`, async (req, res) => {
+
+})
 
 app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
     try {
-        await Con.getConnection();
+        const db = await Con.getConnection();
         const Time = new Date().getTime();
-
-        const UserData = new User({
-            username: req.data[0],
-            email: req.data[1],
-            password: req.data[2],
-            role: 'basic',
-            joinAt: Time,
-        })
 
         const isThereASameUser = await User.findOne({ username: req.data[0] });
         const isThereASameEmail = await User.findOne({ email: req.data[1] })
-        console.log(isThereASameUser)
-        console.log(isThereASameEmail)
+
         if (isThereASameUser) {
             return res.status(409).json({
                 message: 'User Already Exists',
@@ -83,33 +98,121 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             }).end();
         }
 
+        // Transaction Start
+        const session = await db.startSession();
+        await session.startTransaction();
+
+        const UserData = new User({
+            username: req.data[0],
+            email: req.data[1],
+            password: req.data[2],
+            role: 'basic',
+            joinAt: Time,
+        })
+
         await UserData.save();
+        if (!UserData) {
+            session.abortTransaction();
+            return res.status(500).json({
+                message: 'Somiething Wrong Please Try Again',
+            }).end();
+        }
+
         const DataUser = {
             username: UserData['username'],
             email: UserData['email'],
             role: UserData['role'],
         }
 
-        const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
-        const RefToken = createToken({ username: UserData['username'] }, process.env.REF_TOKEN, { expiresIn: 12 * 3600 });
+        const link = generateTokenConfirmation(DataUser);
 
-        return res.status(201).json({
-            message: 'Success Register',
-            auth: true,
-            Access: AccToken,
-            Refresh: RefToken
-        }).end();
+        const TokenUser = new Token({
+            _user: UserData['username'],
+            token: link,
+        })
+
+        await TokenUser.save();
+        if (!TokenUser) {
+            session.abortTransaction();
+            return res.status(500).json({
+                message: 'Somiething Wrong Please Try Again',
+            }).end();
+        }
+
+        const transporter =
+
+            await session.commitTransaction
+
+        // const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
+        // const RefToken = createToken(DataUser, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
+
+        // return res.status(201).json({
+        //     message: 'Success Register',
+        //     auth: true,
+        //     Access: AccToken,
+        //     Refresh: RefToken
+        // }).end();
+
 
     } catch (error) {
-        res.status(500).json({
+        await session.abortTransaction();
+        return res.status(500).json({
             message: `${error}`,
             auth: false,
             token: null
         });
     }
+});
+
+app.post(`${api_url}/newToken`, (req, res) => {
+    try {
+        if (!req.headers.authorization) {
+            return res.status(401).json({
+                message: "Access Forbidden",
+            }).end();
+        }
+        const checkTokenRef = checkToken(req.headers.authorization.split(" ")[1], process.env.REF_TOKEN);
+        if (!checkTokenRef) {
+            return res.status(401).json({
+                message: "No Token Provided",
+            }).end();
+        }
+
+        const DataUser = {
+            username: checkTokenRef['username'],
+            email: checkTokenRef['email'],
+            role: checkTokenRef['role']
+        }
+        const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
+        const RefToken = createToken(DataUser, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
+
+        return res.status(201).json({
+            message: "Token is Been Refreshed",
+            Access: AccToken,
+            RefToken: RefToken
+        }).end()
+    } catch (error) {
+        res.status(401).json({
+            message: `${error}`,
+        })
+    }
+
+
 })
 
-app.post(`${api_url}/logout`, async (req, res) => {
-
+app.delete(`${api_url}/logout`, (req, res) => {
+    if (!req.headers.authorization) {
+        return res.status(404).json({
+            message: 'Your Not Login',
+            Access: null,
+            Refresh: null,
+        }).end();
+    }
+    return res.status(202).json({
+        auth: false,
+        Access: null,
+        Refresh: null,
+        message: 'Logout Successfully'
+    }).end();
 })
 app.listen(process.env.PORT_RES);

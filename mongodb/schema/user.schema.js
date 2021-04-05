@@ -17,12 +17,16 @@ const userSchema = new Mongoose.Schema({
     },
     role: {
         type: String,
-        required: true,
         default: 'basic'
     },
     joinAt: {
         type: Date,
+        required: true,
         default: new Date().getTime(),
+    },
+    isVerified: {
+        type: Boolean,
+        default: false,
     }
 })
 

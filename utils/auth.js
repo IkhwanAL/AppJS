@@ -15,7 +15,7 @@ function createToken(dataUser, token, option = { expiresIn: 10 * 60 }) {
     if (token == null) {
         throw new Error('Token Secret Cannot Be Null');
     }
-
+    // jwt.sign(data, token, {expiresIn: })
     const tokenString = jwt.sign(dataUser, token, option);
     return tokenString;
 }
@@ -32,7 +32,7 @@ function checkToken(token, secretKey) {
         const decoded = jwt.verify(token, secretKey);
         return decoded;
     } catch (err) {
-        throw err.name;
+        throw err;
     }
 }
 
@@ -81,7 +81,7 @@ function registerProcedur(req, res, next) {
  * 
  * @param {String} email
  * Check Email if its Correct with the format  
- * @returns email
+ * @returns Correct Email Password
  */
 
 function emailFormat(email) {
@@ -97,7 +97,7 @@ function emailFormat(email) {
  * 
  * @param {String} password 
  * Check Password if its Correct with the format
- * @returns 
+ * @returns A Correct Format Password
  */
 function passwordFormat(password) {
     password = password.toString();
@@ -152,11 +152,26 @@ function checkPassword(password, passwordHash) {
     }
 }
 
+function generateTokenConfirmation(UserData) {
+    if (UserData == null) throw new Error("User Data is Empty");
+    if (!(typeof UserData === 'object' && typeof UserData !== 'function')) {
+        throw new Error(
+            "Data User is Not An Object"
+        )
+    }
+    const { username, email, role } = UserData;
+    let bufferUser = new Buffer.from(username).toString('base64');
+    let bufferEmail = new Buffer.from(email).toString('base64');
+    let bufferRole = new Buffer.from(role).toString('base64');
+    return [bufferUser, bufferEmail, bufferRole].join(':');
+}
+
 module.exports = {
     registerProcedur,
     createToken,
     checkToken,
     emailFormat,
     passwordFormat,
-    checkPassword
+    checkPassword,
+    generateTokenConfirmation
 }
