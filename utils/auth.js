@@ -38,7 +38,7 @@ function checkToken(token, secretKey) {
 
 /**
  * 
- * @param {Stirng} user 
+ * @param {String} user 
  */
 function checkUsername(user) {
     if (user == null) throw new Error("Username is Empty");

@@ -18,6 +18,7 @@ const api_url = '/api/v1';
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
 
+// Test
 app.post('/asd', (req, res) => {
 
     // let user = bcrypt.hashSync(req.body.username, 1)
@@ -79,7 +80,7 @@ app.post(`${api_url}/confirmation/`, async (req, res) => {
 
 app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
     try {
-        const db = await Con.getConnection();
+        var db = await Con.getConnection();
         const Time = new Date().getTime();
 
         const isThereASameUser = await User.findOne({ username: req.data[0] });
@@ -97,10 +98,11 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
                 auth: false,
             }).end();
         }
-
+        
         // Transaction Start
-        const session = await db.startSession();
-        await session.startTransaction();
+        var session = await db.startSession();
+        // console.log(session)
+        session.startTransaction();
 
         const UserData = new User({
             username: req.data[0],
@@ -110,13 +112,13 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             joinAt: Time,
         })
 
-        await UserData.save();
+        await UserData.save({session});
         if (!UserData) {
-            session.abortTransaction();
+            // await session.abortTransaction();
             return res.status(500).json({
                 message: 'Somiething Wrong Please Try Again',
             }).end();
-        }
+        }   
 
         const DataUser = {
             username: UserData['username'],
@@ -131,17 +133,54 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             token: link,
         })
 
-        await TokenUser.save();
+        await TokenUser.save({session});
         if (!TokenUser) {
-            session.abortTransaction();
+            // await session.abortTransaction();
             return res.status(500).json({
-                message: 'Somiething Wrong Please Try Again',
+                message: 'Something Wrong Please Try Again',
             }).end();
         }
 
-        const transporter =
+        const transporter = NodeMail.createTransport({
+            service: 'gmail',
+            host: 'smtp.gmail.com',
+            type: 'login',
+            auth: {
+                user: 'ikhwanal235@gmail.com',
+                pass: 'axuxzetoogawjrfw'
+            }
+        })
 
-            await session.commitTransaction
+        const mailOptions = {
+            from: 'ikhwanal235@gmail.com',
+            subject: 'Email Verification',
+            html: `This is Verification: 
+                http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
+            to: `${UserData['email']}`
+        }
+        // transporter.sendMail(mailOptions, async (err, info) => {
+        //     if(err){
+        //         // await session.abortTransaction();
+        //         return res.status(500).json({
+        //             message: 'Something Wrong Please Try Again:' + err,
+        //         }).end();
+        //     }
+        //     await session.commitTransaction();
+        //     return res.status(201).json({
+        //         message: "Email Verification Has Been Sent Please Check your Gmail",
+        //         link: `http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
+        //         token: null,
+        //     }).end();
+        // })
+        const result = transporter.sendMail(mailOptions);
+        if(result) {
+            await session.commitTransaction();
+            return res.status(201).json({
+                message: "Email Verification Has Been Sent Please Check your Gmail",
+                link: `http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
+                token: null,
+            }).end();
+        }
 
         // const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
         // const RefToken = createToken(DataUser, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
@@ -150,7 +189,7 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
         //     message: 'Success Register',
         //     auth: true,
         //     Access: AccToken,
-        //     Refresh: RefToken
+            // Refresh: RefToken
         // }).end();
 
 
@@ -161,6 +200,8 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             auth: false,
             token: null
         });
+    } finally{
+        await session.endSession();
     }
 });
 
