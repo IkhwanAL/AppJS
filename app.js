@@ -10,6 +10,11 @@ const {
     checkToken,
     generateTokenConfirmation
 } = require('./utils/auth');
+const {
+    encrypt,
+    decrypt
+} = require('./utils/crypt');
+
 const Con = require('./connection');
 const app = express();
 require('dotenv/config');
@@ -17,6 +22,14 @@ const api_url = '/api/v1';
 
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
+
+app.post('/test', (req, res) => {
+    const DataUser = [req.body.username, req.body.email, 'basic'].join(":").toString();
+    let data = encrypt(DataUser);
+    let result = decrypt(data);
+    console.log(data);
+    console.log(result.split(':'));
+})
 
 app.post(`${api_url}/login`, async (req, res) => {
     await Con.getConnection();
@@ -32,7 +45,7 @@ app.post(`${api_url}/login`, async (req, res) => {
             refreshToken: null,
         }).end();
     }
-    if(user.isVerified == false){
+    if (user.isVerified == false) {
         return res.status(403).json({
             message: 'User Is Not Verified Yet'
         }).redirect('').end();
@@ -67,7 +80,7 @@ app.post(`${api_url}/login`, async (req, res) => {
 app.post(`${api_url}/confirmation/:token`, async (req, res) => {
     try {
         // console.log("im in")
-        if(!req.params.token){
+        if (!req.params.token) {
             return res.status(401).json({
                 message: 'There is No Token to Verified',
                 auth: false,
@@ -75,36 +88,30 @@ app.post(`${api_url}/confirmation/:token`, async (req, res) => {
         }
 
         await Con.getConnection();
-        const token = req.params.token.toString().split(":");
-        let decodedToken = [];
-        
-        for(let i  = 0; i < token.length; i++){
-            let result = new Buffer.from(token[i], 'base64').toString('ascii');
-            decodedToken.push(result);
-        }
-        
-        const findUser = await Token.findOne({_user: decodedToken[0]});
+        let decryptToken = decrypt(req.params.token).split(':');
+
+        const findUser = await Token.findOne({ _user: decryptToken[0] });
         // console.log(findUser)
-        if(!findUser){
+        if (!findUser) {
             return res.status(404).json({
                 message: "The Token You Provided is Expired"
             })
         }
-        const UserData = await User.findOne({username: decodedToken[0], email: decodedToken[1]});
+        const UserData = await User.findOne({ username: decryptToken[0], email: decryptToken[1] });
 
-        if(UserData.isVerified == true){
+        if (UserData.isVerified == true) {
             return res.status(404).json({
-                message: 'User is ALready Verified',
+                message: 'User is Already Verified',
             }).end();
         }
 
         UserData.isVerified = true;
         await UserData.save();
-        
+
         const DataUser = {
-            username: decodedToken[0],
-            email: decodedToken[1],
-            role: decodedToken[2],
+            username: decryptToken[0],
+            email: decryptToken[1],
+            role: decryptToken[2],
         }
 
         const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
@@ -116,14 +123,14 @@ app.post(`${api_url}/confirmation/:token`, async (req, res) => {
             Access: AccToken,
             Refresh: RefToken
         }).end();
-    
+
     } catch (error) {
         return res.status(500).json({
             message: `${error}`,
             auth: false,
         }).end();
     }
-    
+
 })
 
 app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
@@ -146,10 +153,9 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
                 auth: false,
             }).end();
         }
-        
+
         // Transaction Start
         var session = await db.startSession();
-        // console.log(session)
         session.startTransaction();
 
         const UserData = new User({
@@ -160,30 +166,30 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             joinAt: Time,
         })
 
-        await UserData.save({session});
+        await UserData.save({ session });
         if (!UserData) {
             // await session.abortTransaction();
             return res.status(500).json({
                 message: 'Somiething Wrong Please Try Again',
             }).end();
-        }   
-
-        const DataUser = {
-            username: UserData['username'],
-            email: UserData['email'],
-            role: UserData['role'],
         }
 
-        const link = generateTokenConfirmation(DataUser);
+        const DataUser = [
+            UserData['username'],
+            UserData['email'],
+            UserData['role'],
+        ].join(':');
+
+        const link = encrypt(DataUser);
 
         const TokenUser = new Token({
             _user: UserData['username'],
             token: link,
+            createdAt: Date.now(),
         })
 
-        await TokenUser.save({session});
+        await TokenUser.save({ session });
         if (!TokenUser) {
-            // await session.abortTransaction();
             return res.status(500).json({
                 message: 'Something Wrong Please Try Again',
             }).end();
@@ -207,12 +213,11 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             to: `${UserData['email']}`
         }
         const result = transporter.sendMail(mailOptions);
-        if(result) {
+        if (result) {
             await session.commitTransaction();
             return res.status(201).json({
                 message: "Email Verification Has Been Sent Please Check your Gmail",
                 link: `http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
-                token: null,
             }).end();
         }
 
@@ -223,7 +228,7 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             auth: false,
             token: null
         });
-    } finally{
+    } finally {
         await session.endSession();
     }
 });

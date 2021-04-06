@@ -166,6 +166,8 @@ function generateTokenConfirmation(UserData) {
     return [bufferUser, bufferEmail, bufferRole].join(':');
 }
 
+
+
 module.exports = {
     registerProcedur,
     createToken,

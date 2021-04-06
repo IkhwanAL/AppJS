@@ -12,12 +12,12 @@ const TokenSchema = new Mongoose.Schema({
     },
     createdAt: {
         type: Date,
-        default: Date.now(),
-        index: {
-            unique: true,
-            expires: 30 * 60
-        }
+        required: true,
+        default: Date.now,
+        // expires: '1m',
     }
 })
+
+TokenSchema.index({ createdAt: 1 }, { expireAfterSeconds: 1 * 60 })
 
 module.exports = Mongoose.model('Token', TokenSchema, 'Tokens');
