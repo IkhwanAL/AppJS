@@ -12,8 +12,11 @@ const TokenSchema = new Mongoose.Schema({
     },
     createdAt: {
         type: Date,
-        defautl: Date.now(),
-        expires: 30 * 60,
+        default: Date.now(),
+        index: {
+            unique: true,
+            expires: 30 * 60
+        }
     }
 })
 

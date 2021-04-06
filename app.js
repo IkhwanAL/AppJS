@@ -18,21 +18,6 @@ const api_url = '/api/v1';
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
 
-// Test
-app.post('/asd', (req, res) => {
-
-    // let user = bcrypt.hashSync(req.body.username, 1)
-    // let email = bcrypt.hashSync(req.body.email, 1)
-    // let role = bcrypt.hashSync('basic', 1)
-
-    let user = new Buffer.from(req.body.username).toString('base64');
-    let email = new Buffer.from(req.body.email).toString('base64');
-    let role = new Buffer.from('basic').toString('base64');
-    let link = [user, email, role].join(':');
-    // let data = link.split(":");
-    res.end(`${link}`);
-})
-
 app.post(`${api_url}/login`, async (req, res) => {
     await Con.getConnection();
     let email = req.body.email;
@@ -46,6 +31,11 @@ app.post(`${api_url}/login`, async (req, res) => {
             accessToken: null,
             refreshToken: null,
         }).end();
+    }
+    if(user.isVerified == false){
+        return res.status(403).json({
+            message: 'User Is Not Verified Yet'
+        }).redirect('').end();
     }
     if (!(checkPassword(pass, user['password']))) {
         return res.status(401).json({
@@ -74,8 +64,66 @@ app.post(`${api_url}/login`, async (req, res) => {
     return res.end();
 })
 
-app.post(`${api_url}/confirmation/`, async (req, res) => {
+app.post(`${api_url}/confirmation/:token`, async (req, res) => {
+    try {
+        // console.log("im in")
+        if(!req.params.token){
+            return res.status(401).json({
+                message: 'There is No Token to Verified',
+                auth: false,
+            }).end();
+        }
 
+        await Con.getConnection();
+        const token = req.params.token.toString().split(":");
+        let decodedToken = [];
+        
+        for(let i  = 0; i < token.length; i++){
+            let result = new Buffer.from(token[i], 'base64').toString('ascii');
+            decodedToken.push(result);
+        }
+        
+        const findUser = await Token.findOne({_user: decodedToken[0]});
+        // console.log(findUser)
+        if(!findUser){
+            return res.status(404).json({
+                message: "The Token You Provided is Expired"
+            })
+        }
+        const UserData = await User.findOne({username: decodedToken[0], email: decodedToken[1]});
+
+        if(UserData.isVerified == true){
+            return res.status(404).json({
+                message: 'User is ALready Verified',
+            }).end();
+        }
+
+        UserData.isVerified = true;
+        await UserData.save();
+        
+        const DataUser = {
+            username: decodedToken[0],
+            email: decodedToken[1],
+            role: decodedToken[2],
+        }
+
+        const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
+        const RefToken = createToken(DataUser, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
+
+        return res.status(201).json({
+            message: 'Success Register',
+            auth: true,
+            Access: AccToken,
+            Refresh: RefToken
+        }).end();
+    
+    } catch (error) {
+        return res.status(500).json({
+            message: `${error}`,
+            auth: false,
+        }).end();
+    }
+    
 })
 
 app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
@@ -158,20 +206,6 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
                 http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
             to: `${UserData['email']}`
         }
-        // transporter.sendMail(mailOptions, async (err, info) => {
-        //     if(err){
-        //         // await session.abortTransaction();
-        //         return res.status(500).json({
-        //             message: 'Something Wrong Please Try Again:' + err,
-        //         }).end();
-        //     }
-        //     await session.commitTransaction();
-        //     return res.status(201).json({
-        //         message: "Email Verification Has Been Sent Please Check your Gmail",
-        //         link: `http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
-        //         token: null,
-        //     }).end();
-        // })
         const result = transporter.sendMail(mailOptions);
         if(result) {
             await session.commitTransaction();
@@ -181,17 +215,6 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
                 token: null,
             }).end();
         }
-
-        // const AccToken = createToken(DataUser, process.env.ACC_TOKEN);
-        // const RefToken = createToken(DataUser, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
-
-        // return res.status(201).json({
-        //     message: 'Success Register',
-        //     auth: true,
-        //     Access: AccToken,
-            // Refresh: RefToken
-        // }).end();
-
 
     } catch (error) {
         await session.abortTransaction();
