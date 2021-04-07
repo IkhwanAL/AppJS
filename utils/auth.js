@@ -15,7 +15,6 @@ function createToken(dataUser, token, option = { expiresIn: 10 * 60 }) {
     if (token == null) {
         throw new Error('Token Secret Cannot Be Null');
     }
-    // jwt.sign(data, token, {expiresIn: })
     const tokenString = jwt.sign(dataUser, token, option);
     return tokenString;
 }
@@ -28,6 +27,7 @@ function createToken(dataUser, token, option = { expiresIn: 10 * 60 }) {
 
 function checkToken(token, secretKey) {
     token = token.toString();
+    // const tokenWithoutBearer = token.split(" ");
     try {
         const decoded = jwt.verify(token, secretKey);
         return decoded;
@@ -144,29 +144,13 @@ function hash(password) {
 
 function checkPassword(password, passwordHash) {
     try {
-        if (passwordHash == null && password == null) throw new Error("Password Is Empty")
+        if (passwordHash == null || password == null) throw new Error("Password Is Empty")
         const verify = bcrypt.compareSync(password, passwordHash);
         return verify;
     } catch (error) {
         return error;
     }
 }
-
-function generateTokenConfirmation(UserData) {
-    if (UserData == null) throw new Error("User Data is Empty");
-    if (!(typeof UserData === 'object' && typeof UserData !== 'function')) {
-        throw new Error(
-            "Data User is Not An Object"
-        )
-    }
-    const { username, email, role } = UserData;
-    let bufferUser = new Buffer.from(username).toString('base64');
-    let bufferEmail = new Buffer.from(email).toString('base64');
-    let bufferRole = new Buffer.from(role).toString('base64');
-    return [bufferUser, bufferEmail, bufferRole].join(':');
-}
-
-
 
 module.exports = {
     registerProcedur,
@@ -175,5 +159,4 @@ module.exports = {
     emailFormat,
     passwordFormat,
     checkPassword,
-    generateTokenConfirmation
 }

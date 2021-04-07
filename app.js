@@ -8,7 +8,6 @@ const {
     createToken,
     checkPassword,
     checkToken,
-    generateTokenConfirmation
 } = require('./utils/auth');
 const {
     encrypt,
@@ -16,6 +15,7 @@ const {
 } = require('./utils/crypt');
 
 const Con = require('./connection');
+const { startSession } = require('mongoose');
 const app = express();
 require('dotenv/config');
 const api_url = '/api/v1';
@@ -23,63 +23,65 @@ const api_url = '/api/v1';
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
 
-app.post('/test', (req, res) => {
-    const DataUser = [req.body.username, req.body.email, 'basic'].join(":").toString();
-    let data = encrypt(DataUser);
-    let result = decrypt(data);
-    console.log(data);
-    console.log(result.split(':'));
+app.post('/test/', (req, res) => {
+    let resEnc = encrypt("Ikhwan:nanonail235@gmail.com:basic");
+    console.log('Result Enc:', resEnc);
+    console.log(decrypt(resEnc))
 })
 
 app.post(`${api_url}/login`, async (req, res) => {
-    await Con.getConnection();
-    let email = req.body.email;
-    let pass = req.body.password;
+    try {
+        await Con.getConnection();
+        let email = req.body.email;
+        let pass = req.body.password;
 
-    let user = await User.findOne({ email: email })
-    if (!user) {
-        return res.status(404).json({
-            message: 'User Seems Doesnt Exists Yet',
+        let user = await User.findOne({ email: email })
+        if (!user) {
+            return res.status(404).json({
+                message: 'User Seems Doesnt Exists Yet',
+                auth: false,
+            }).end();
+        }
+        if (user.isVerified == false) {
+            return res.status(403).json({
+                message: 'User Is Not Verified Yet'
+            }).end();
+        }
+        if (!(checkPassword(pass, user['password']))) {
+            return res.status(401).json({
+                message: "Wrong Password",
+                auth: false,
+            }).end();
+        }
+        const UserData = {
+            id: user['_id'],
+            username: user['username'],
+            email: user['email'],
+            role: user['role']
+        }
+
+        const accessToken = createToken(UserData, process.env.ACC_TOKEN); // Accessing File or Data
+        // For Creating Token purpose only
+        const refreshToken = createToken(UserData, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
+
+        res.status(200).json({
+            message: 'Login Success',
+            auth: true,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+        })
+        return res.end();
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Server Error Please Try again in a Few Minutes',
             auth: false,
-            accessToken: null,
-            refreshToken: null,
-        }).end();
-    }
-    if (user.isVerified == false) {
-        return res.status(403).json({
-            message: 'User Is Not Verified Yet'
-        }).redirect('').end();
-    }
-    if (!(checkPassword(pass, user['password']))) {
-        return res.status(401).json({
-            message: "Wrong Password",
-            auth: false,
-            accessToken: null,
-            refreshToken: null
-        }).end();
-    }
-    const UserData = {
-        id: user['_id'],
-        username: user['username'],
-        email: user['email'],
-        role: user['role']
+        })
     }
 
-    const accessToken = createToken(UserData, process.env.ACC_TOKEN);
-    const refreshToken = createToken(UserData, process.env.REF_TOKEN, { expiresIn: 8 * 3600 });
-
-    res.status(200).json({
-        message: 'Login Success',
-        auth: true,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-    })
-    return res.end();
 })
 
-app.post(`${api_url}/confirmation/:token`, async (req, res) => {
+app.post(`/confirmation/:token`, async (req, res) => {
     try {
-        // console.log("im in")
         if (!req.params.token) {
             return res.status(401).json({
                 message: 'There is No Token to Verified',
@@ -91,7 +93,6 @@ app.post(`${api_url}/confirmation/:token`, async (req, res) => {
         let decryptToken = decrypt(req.params.token).split(':');
 
         const findUser = await Token.findOne({ _user: decryptToken[0] });
-        // console.log(findUser)
         if (!findUser) {
             return res.status(404).json({
                 message: "The Token You Provided is Expired"
@@ -130,12 +131,88 @@ app.post(`${api_url}/confirmation/:token`, async (req, res) => {
             auth: false,
         }).end();
     }
+})
 
+app.post(`${api_url}/createNewLinkVerified`, async (req, res) => {
+    var db = await Con.getConnection();
+    try {
+        if (!req.body) {
+            return res.status(400).json({
+                message: "please Provide an Email"
+            }).end();
+        }
+
+        const email = req.body.email;
+
+        let isThereASameEmail = await User.findOne({ email });
+        if (!isThereASameEmail) {
+            return res.status(404).json({
+                message: 'Email is Not Registered Yet',
+            }).end();
+        }
+        let DataUser = [
+            isThereASameEmail['username'],
+            isThereASameEmail['email'],
+            isThereASameEmail['role']
+        ].join(':');
+        const Link = encrypt(DataUser.toString());
+
+        var session = await db.startSession();
+        // console.log(session)
+        await session.startTransaction();
+
+        const DataToken = new Token({
+            _user: isThereASameEmail['username'],
+            token: Link,
+            createdAt: Date.now()
+        })
+
+        await DataToken.save({ session });
+
+        const transport = NodeMail.createTransport({
+            service: 'gmail',
+            host: 'smtp.gmail.com',
+            type: 'login',
+            auth: {
+                user: 'ikhwanal235@gmail.com',
+                pass: process.env.APP_PASS
+            }
+        })
+
+        const mailOptions = {
+            from: 'no-reply@gmail.com',
+            subject: 'Renew Email Verification',
+            html: `This is Link Verfication
+                    http://${req.hostname}:${process.env.PORT_RES}/confirmation/${Link}`,
+            to: email
+        };
+
+        const result = transport.sendMail(mailOptions);
+        if (!result) {
+            throw new Error('Failed To Send Link Verification to Email');
+        }
+        await session.commitTransaction();
+        // db.endSession();
+        return res.status(201).json({
+            message: 'Renew Link Success',
+            link: `http://${req.hostname}:${process.env.PORT_RES}/confirmation/${Link}`
+        }).end();
+
+    } catch (error) {
+        await session.abortTransaction();
+        // session.endSession();
+        return res.status(500).json({
+            message: "Server Error:" + error,
+        }).end();
+    } finally {
+        session.endSession();
+    }
 })
 
 app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
+    var db = await Con.getConnection();
+    var session = await db.startSession();
     try {
-        var db = await Con.getConnection();
         const Time = new Date().getTime();
 
         const isThereASameUser = await User.findOne({ username: req.data[0] });
@@ -155,7 +232,6 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
         }
 
         // Transaction Start
-        var session = await db.startSession();
         session.startTransaction();
 
         const UserData = new User({
@@ -167,12 +243,6 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
         })
 
         await UserData.save({ session });
-        if (!UserData) {
-            // await session.abortTransaction();
-            return res.status(500).json({
-                message: 'Somiething Wrong Please Try Again',
-            }).end();
-        }
 
         const DataUser = [
             UserData['username'],
@@ -189,11 +259,6 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
         })
 
         await TokenUser.save({ session });
-        if (!TokenUser) {
-            return res.status(500).json({
-                message: 'Something Wrong Please Try Again',
-            }).end();
-        }
 
         const transporter = NodeMail.createTransport({
             service: 'gmail',
@@ -201,15 +266,15 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             type: 'login',
             auth: {
                 user: 'ikhwanal235@gmail.com',
-                pass: 'axuxzetoogawjrfw'
+                pass: process.env.APP_PASS
             }
         })
 
         const mailOptions = {
-            from: 'ikhwanal235@gmail.com',
+            from: 'no-reply@gmail.com',
             subject: 'Email Verification',
             html: `This is Verification: 
-                http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
+                http://${req.hostname}:${process.env.PORT_RES}/confirmation/${link}`,
             to: `${UserData['email']}`
         }
         const result = transporter.sendMail(mailOptions);
@@ -217,7 +282,7 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             await session.commitTransaction();
             return res.status(201).json({
                 message: "Email Verification Has Been Sent Please Check your Gmail",
-                link: `http://${req.hostname}:${process.env.PORT_RES}${api_url}/confirmation/${link}`,
+                link: `http://${req.hostname}:${process.env.PORT_RES}/confirmation/${link}`,
             }).end();
         }
 
@@ -229,7 +294,7 @@ app.post(`${api_url}/register`, registerProcedur, async (req, res) => {
             token: null
         });
     } finally {
-        await session.endSession();
+        session.endSession();
     }
 });
 

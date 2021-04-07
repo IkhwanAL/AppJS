@@ -18,6 +18,6 @@ const TokenSchema = new Mongoose.Schema({
     }
 })
 
-TokenSchema.index({ createdAt: 1 }, { expireAfterSeconds: 1 * 60 })
+TokenSchema.index({ createdAt: 1 }, { expireAfterSeconds: 15 * 60 })
 
 module.exports = Mongoose.model('Token', TokenSchema, 'Tokens');
