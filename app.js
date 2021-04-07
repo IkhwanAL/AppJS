@@ -15,19 +15,12 @@ const {
 } = require('./utils/crypt');
 
 const Con = require('./connection');
-const { startSession } = require('mongoose');
 const app = express();
 require('dotenv/config');
 const api_url = '/api/v1';
 
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
-
-app.post('/test/', (req, res) => {
-    let resEnc = encrypt("Ikhwan:nanonail235@gmail.com:basic");
-    console.log('Result Enc:', resEnc);
-    console.log(decrypt(resEnc))
-})
 
 app.post(`${api_url}/login`, async (req, res) => {
     try {
