@@ -19,10 +19,6 @@ const app = express();
 require('dotenv/config');
 const api_url = '/api/v1';
 
-app.use('/', (req, res, next) => {
-    res.send("Welcome")
-})
-
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
 
@@ -346,6 +342,4 @@ app.delete(`${api_url}/logout`, (req, res) => {
         message: 'Logout Successfully'
     }).end();
 })
-app.listen(process.env.PORT_RES || 3000, () => {
-    console.log("Active")
-});
+app.listen(process.env.PORT_RES);
