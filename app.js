@@ -19,6 +19,10 @@ const app = express();
 require('dotenv/config');
 const api_url = '/api/v1';
 
+app.use('/', (req, res, next) => {
+    res.send("Welcome")
+})
+
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json());
 
