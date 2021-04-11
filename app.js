@@ -342,4 +342,4 @@ app.delete(`${api_url}/logout`, (req, res) => {
         message: 'Logout Successfully'
     }).end();
 })
-app.listen(process.env.PORT_RES);
+app.listen(process.env.PORT || 3000);
